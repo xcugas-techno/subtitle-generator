@@ -29,9 +29,9 @@ def subtitledata():
         if video and allowed_file(video.filename):
             video_filename = secure_filename(video.filename)
             video.save(os.path.join(app.config['UPLOAD_FOLDER'], 'subtitlevideo.mp4'))
-
-        data = subtitle.main(video)
-    return data
+#         data = subtitle.main(video)
+#     return data
+      return "Hello World"
         # json_d = {"chainese_word" : chainese_word, "wav_file" : wav_file, "eng_trans" : eng_trans, "option1" : option1, "option2" : option2, "correct_answer" : correct_answer}
         # json_data=json.dumps(json_d)
         # print("json_data",json_data)
