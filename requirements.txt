@@ -1,3 +1,8 @@
+flask==2.2.2
+gunicorn
+pytorch==1.13
 openai-whisper
-flask
-ffmpeg
+pysrt==1.1.2
+googletrans==4.0.0-rc1
+pytube
+backoff
