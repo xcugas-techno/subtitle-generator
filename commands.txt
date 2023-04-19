@@ -1,0 +1,7 @@
+python==3.8.5
+for ubuntu :
+sudo apt-get update
+sudo apt install ffmpeg
+
+for installing openai whisper:
+pip install -U openai-whisper
