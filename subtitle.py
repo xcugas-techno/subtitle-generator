@@ -1,25 +1,30 @@
 import os
 import ffmpeg
-import whisper
+from pytube import YouTube
+import shutil
 import warnings
-import tempfile
+from time import sleep
+from googletrans import Translator
+import backoff
 from typing import Iterator, TextIO
 
 location = os.getcwd()
-srt_file_dir = "srt_files"
-srt_folder_path = os.path.join(location, srt_file_dir)
+extracted_audio_dir = "extracted_audio"
+extracted_folder_path = os.path.join(location, extracted_audio_dir)
 
+isExistinput = os.path.exists(extracted_folder_path)
+if(isExistinput == True):
+    shutil.rmtree(extracted_folder_path)
+    os.mkdir(extracted_folder_path)
+elif(isExistinput == False):
+    os.mkdir(extracted_folder_path)
 
-def str2bool(string):
-    string = string.lower()
-    str2val = {"true": True, "false": False}
+def download_videos(video_url, video_folder_path):
+    yt = YouTube(video_url)
 
-    if string in str2val:
-        return str2val[string]
-    else:
-        raise ValueError(
-            f"Expected one of {set(str2val.keys())}, got {string}")
+    output = yt.streams.filter(file_extension="mp4").get_by_resolution("720p").download(video_folder_path)
 
+    return output
 
 def format_timestamp(seconds: float, always_include_hours: bool = False):
     assert seconds >= 0, "non-negative timestamp expected"
@@ -50,56 +55,30 @@ def write_srt(transcript: Iterator[dict], file: TextIO):
         )
 
 
-def filename(path):
-    return os.path.splitext(os.path.basename(path))[0]
-
-
-def main(video):
-    model_name = "small"
-    output_dir = srt_folder_path
-    srt_only = True
-
-    if model_name.endswith(".en"):
-        warnings.warn(
-            f"{model_name} is an English-only model, forcing English detection.")
-        args["language"] = "en"
-
-    model = whisper.load_model(model_name)
-    audios = get_audio(video)
-    subtitles = get_subtitles(
-        audios, srt_only, output_dir, lambda audio_path: model.transcribe(audio_path, **args)
-    )
-
-    if srt_only:
-        return
+def filename(video_path):
+    return os.path.splitext(os.path.basename(video_path))[0]
 
 
 
-def get_audio(paths):
-    temp_dir = tempfile.gettempdir()
-
+def get_audio(path):
     audio_paths = {}
 
-    for path in paths:
-        print(f"Extracting audio from {filename(path)}...")
-        output_path = os.path.join(temp_dir, f"{filename(path)}.wav")
+    print(f"Extracting audio from {filename(path)}...")
+    output_path = os.path.join(extracted_folder_path, f"{filename(path)}.wav")
 
-        ffmpeg.input(path).output(
-            output_path,
-            acodec="pcm_s16le", ac=1, ar="16k"
-        ).run(quiet=True, overwrite_output=True)
+    ffmpeg.input(path).output(
+        output_path,
+        acodec="pcm_s16le", ac=1, ar="16k").run(quiet=True) #quiet=True
 
-        audio_paths[path] = output_path
+    audio_paths[path] = output_path
 
     return audio_paths
-
 
 def get_subtitles(audio_paths: list, output_srt: bool, output_dir: str, transcribe: callable):
     subtitles_path = {}
 
     for path, audio_path in audio_paths.items():
-        srt_path = output_dir if output_srt else tempfile.gettempdir()
-        srt_path = os.path.join(srt_path, f"{filename(path)}.srt")
+        srt_path = os.path.join(output_dir, f"English.srt")
         
         print(
             f"Generating subtitles for {filename(path)}... This might take a while."
@@ -114,9 +93,46 @@ def get_subtitles(audio_paths: list, output_srt: bool, output_dir: str, transcri
 
         subtitles_path[path] = srt_path
 
-    return subtitles_path
+    return subtitles_path[path]
 
+class translator:
+    def __init__(self):
+        self.client = Translator()
+        self.sleep_in_between_translations_seconds = 10
+        self.source_language = "en"
+        self.max_chunk_size = 4000
 
+    def __createChunks(self, corpus):
+        chunks = [corpus[i:i + self.max_chunk_size] for i in range(0, len(corpus), self.max_chunk_size)]
+        return chunks
 
-if __name__ == '__main__':
-    main(video)
+    def __sleepBetweenQuery(self):
+        print('Sleeping for {}s after translation query..'.format(self.sleep_in_between_translations_seconds))
+        sleep(self.sleep_in_between_translations_seconds)
+
+    @backoff.on_exception(backoff.expo, Exception, max_tries=150)
+    def Translate(self, content, dest_language_code):
+        try:
+            print('Attempting to translate to lang={}'.format(dest_language_code))
+            if len(content) > self.max_chunk_size:
+                print('Warning: Content is longer than allowed size of {}, breaking into chunks'.format(self.max_chunk_size))
+                results_list = []
+                concatenated_result = ""
+
+                original_chunks = self.__createChunks(content)
+                for i in original_chunks:
+                    r = self.client.translate(i, dest=dest_language_code, src=self.source_language)
+                    self.__sleepBetweenQuery()
+                    results_list.append(r.text)
+
+                for i in results_list:
+                    concatenated_result += i
+
+                return concatenated_result
+            else:
+                res = self.client.translate(content, dest=dest_language_code, src=self.source_language)
+                self.__sleepBetweenQuery()
+                return res.text
+        except Exception as e:
+            print(e)
+            raise e
