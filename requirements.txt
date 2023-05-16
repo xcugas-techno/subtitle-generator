@@ -4,5 +4,4 @@ pytorch==1.13
 openai-whisper
 pysrt==1.1.2
 googletrans==4.0.0-rc1
-pytube
 backoff==2.2.1
